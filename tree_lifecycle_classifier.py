@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+from PIL import Image
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout, Input
@@ -57,6 +58,22 @@ if df_combined.empty or len(df_combined) < 10:
 
 print(f"Total number of images collected: {len(df_combined)}")
 
+def is_valid_image(path):
+    try:
+        with Image.open(path) as img:
+            fmt = img.format
+            if fmt not in ('JPEG', 'PNG', 'BMP', 'GIF'):
+                return False
+            img.verify()
+        return True
+    except Exception:
+        return False
+
+print("Validating images (filtering out corrupt/webp files)...")
+valid_mask = df_combined['path'].apply(is_valid_image)
+df_combined = df_combined[valid_mask].reset_index(drop=True)
+print(f"Valid images after filtering: {len(df_combined)} (removed {(~valid_mask).sum()} bad files)")
+
 df_combined['stratify_label'] = df_combined['species'] + '_' + df_combined['lifecycle']
 
 min_samples = 4
@@ -87,16 +104,10 @@ species_to_idx = {name: idx for idx, name in enumerate(unique_species)}
 lifecycle_to_idx = {name: idx for idx, name in enumerate(unique_lifecycles)}
 
 def process_path(file_path, species_label, lifecycle_label):
-    # Load the image
     img_raw = tf.io.read_file(file_path)
-    # We must cleanly decode it, some files from Bing are webp disguised as jpg
-    # Use decode_image which handles jpeg, png, gif, bmp
-    img = tf.image.decode_image(img_raw, channels=3, expand_animations=False)
-    # Ensure shape is set because decode_image loses static shape info
-    img.set_shape([None, None, 3])
+    img = tf.image.decode_jpeg(img_raw, channels=3)
     img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
-    img = img / 255.0 
-    
+    img = img / 255.0
     targets = {
         'species': tf.one_hot(species_label, depth=num_species_classes),
         'lifecycle': tf.one_hot(lifecycle_label, depth=num_lifecycle_classes)
