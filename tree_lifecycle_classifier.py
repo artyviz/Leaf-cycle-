@@ -87,8 +87,13 @@ species_to_idx = {name: idx for idx, name in enumerate(unique_species)}
 lifecycle_to_idx = {name: idx for idx, name in enumerate(unique_lifecycles)}
 
 def process_path(file_path, species_label, lifecycle_label):
-    img = tf.io.read_file(file_path)
-    img = tf.image.decode_jpeg(img, channels=3)
+    # Load the image
+    img_raw = tf.io.read_file(file_path)
+    # We must cleanly decode it, some files from Bing are webp disguised as jpg
+    # Use decode_image which handles jpeg, png, gif, bmp
+    img = tf.image.decode_image(img_raw, channels=3, expand_animations=False)
+    # Ensure shape is set because decode_image loses static shape info
+    img.set_shape([None, None, 3])
     img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
     img = img / 255.0 
     
