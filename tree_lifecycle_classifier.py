@@ -313,4 +313,59 @@ def predict_tree_leaf(img_path):
         print(f"Error predicting image: {e}")
         return None
 
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
+
+print("\n--- Generating Confusion Matrices ---")
+
+all_species_true = []
+all_species_pred = []
+all_lifecycle_true = []
+all_lifecycle_pred = []
+
+for paths, sp_labels, lc_labels in test_ds.unbatch().batch(1):
+    preds = model(paths, training=False)
+    all_species_true.append(tf.argmax(sp_labels[0]).numpy())
+    all_species_pred.append(tf.argmax(preds[0][0]).numpy())
+    all_lifecycle_true.append(tf.argmax(lc_labels[0]).numpy())
+    all_lifecycle_pred.append(tf.argmax(preds[1][0]).numpy())
+
+species_names  = [idx_to_species[i]  for i in range(num_species_classes)]
+lifecycle_names = [idx_to_lifecycle[i] for i in range(num_lifecycle_classes)]
+
+cm_species   = confusion_matrix(all_species_true,   all_species_pred)
+cm_lifecycle = confusion_matrix(all_lifecycle_true, all_lifecycle_pred)
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle('Tree Lifecycle Classifier — Confusion Matrices (Fine-Tuned)', fontsize=15, fontweight='bold')
+
+sns.heatmap(cm_species, annot=True, fmt='d', cmap='Blues',
+            xticklabels=species_names, yticklabels=species_names,
+            linewidths=0.5, ax=axes[0])
+axes[0].set_title(f'Species  (Acc: {test_results[3]*100:.1f}%)', fontsize=13)
+axes[0].set_xlabel('Predicted', fontsize=11)
+axes[0].set_ylabel('True', fontsize=11)
+axes[0].tick_params(axis='x', rotation=30)
+
+lifecycle_labels_disp = [l.replace('_', '\n') for l in lifecycle_names]
+sns.heatmap(cm_lifecycle, annot=True, fmt='d', cmap='Greens',
+            xticklabels=lifecycle_labels_disp, yticklabels=lifecycle_labels_disp,
+            linewidths=0.5, ax=axes[1])
+axes[1].set_title(f'Lifecycle Stage  (Acc: {test_results[4]*100:.1f}%)', fontsize=13)
+axes[1].set_xlabel('Predicted', fontsize=11)
+axes[1].set_ylabel('True', fontsize=11)
+axes[1].tick_params(axis='x', rotation=30)
+
+plt.tight_layout()
+plot_path = 'confusion_matrices.png'
+plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+plt.show()
+print(f"\nConfusion matrices saved to: {plot_path}")
+
+print("\nClassification Report — Species:")
+print(classification_report(all_species_true, all_species_pred, target_names=species_names))
+
+print("Classification Report — Lifecycle:")
+print(classification_report(all_lifecycle_true, all_lifecycle_pred, target_names=lifecycle_names))
+
 print("\nRefactoring Complete! You can now use predict_tree_leaf() function to infer images.")
