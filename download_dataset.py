@@ -1,60 +1,117 @@
-import sys
-from bing_image_downloader import downloader
 import os
+import time
+import urllib.request
+import requests
+from PIL import Image
 
-# Define the species and stages
-species = ['oak', 'maple', 'birch']
-stages = {
-    'bud_emergence': 'budding emergence leaf close up',
-    'expansion_maturity': 'mature green leaf summer',
-    'senescence': 'autumn leaf changing color',
-    'abscission': 'fallen brown leaf ground dead'
+SPECIES = {
+    'oak':   'Quercus',
+    'maple': 'Acer',
+    'birch': 'Betula',
 }
 
-DATA_DIR = 'data'
-IMAGES_PER_CLASS = 50
+LIFECYCLE_MONTHS = {
+    'bud_emergence':       '3,4',
+    'expansion_maturity':  '6,7',
+    'senescence':          '9,10',
+    'abscission':          '11,12',
+}
 
-print("Downloading dataset...")
+IMAGES_PER_CLASS = 120
+INAT_API = 'https://api.inaturalist.org/v1/observations'
 
-for sp in species:
-    for stage_name, stage_query in stages.items():
-        query = f"{sp} tree {stage_query}"
-        
-        # The downloader creates a folder named after the query. 
-        # We need to output directly to the correct structured folder.
-        output_dir = os.path.join(DATA_DIR, sp)
-        
-        print(f"Downloading: {sp} - {stage_name} ({query})")
+
+def is_valid_image(path):
+    try:
+        with Image.open(path) as img:
+            if img.format not in ('JPEG', 'PNG', 'BMP'):
+                return False
+            img.verify()
+        return True
+    except Exception:
+        return False
+
+
+def download_class(species_name, taxon_query, stage, months, save_dir, target):
+    os.makedirs(save_dir, exist_ok=True)
+    existing = len([f for f in os.listdir(save_dir) if f.endswith(('.jpg', '.png'))])
+    if existing >= target:
+        print(f"  [SKIP] {species_name}/{stage} already has {existing} images.")
+        return existing
+
+    saved = existing
+    page = 1
+    print(f"  Downloading {species_name}/{stage} (target={target})...")
+
+    while saved < target:
+        params = {
+            'taxon_name':    taxon_query,
+            'quality_grade': 'research',
+            'photos':        'true',
+            'month':         months,
+            'per_page':      100,
+            'page':          page,
+            'order_by':      'votes',
+        }
         try:
-            downloader.download(
-                query, 
-                limit=IMAGES_PER_CLASS, 
-                output_dir=output_dir, 
-                adult_filter_off=False, 
-                force_replace=False, 
-                timeout=60, 
-                verbose=False
-            )
-            
-            # The downloader saves them in data/{species}/{query}/
-            # We need to rename that downloaded folder to the proper {stage_name}
-            downloaded_folder = os.path.join(output_dir, query)
-            target_folder = os.path.join(output_dir, stage_name)
-            
-            if os.path.exists(downloaded_folder):
-                # If target already exists, we might need to merge or just replace.
-                # Since force_replace=False above, it will append if run again.
-                if os.path.exists(target_folder):
-                    # Move files from downloaded to target
-                    import shutil
-                    for file in os.listdir(downloaded_folder):
-                        shutil.move(os.path.join(downloaded_folder, file), os.path.join(target_folder, file))
-                    os.rmdir(downloaded_folder)
-                else:
-                    os.rename(downloaded_folder, target_folder)
-                
+            resp = requests.get(INAT_API, params=params, timeout=15)
+            resp.raise_for_status()
+            results = resp.json().get('results', [])
         except Exception as e:
-            print(f"Failed to download {query}: {e}")
+            print(f"    API error: {e}")
+            break
 
-print(f"\n✅ Download complete! Images are structured in {DATA_DIR}/ directory.")
-print("You can now run 'python tree_lifecycle_classifier.py' to train the model!")
+        if not results:
+            break
+
+        for obs in results:
+            if saved >= target:
+                break
+            try:
+                raw_url = obs['photos'][0]['url']
+                img_url = raw_url.replace('square', 'medium')
+                fname = os.path.join(save_dir, f"{species_name}_{stage}_{saved:04d}.jpg")
+                urllib.request.urlretrieve(img_url, fname)
+                if is_valid_image(fname):
+                    saved += 1
+                else:
+                    os.remove(fname)
+            except Exception:
+                pass
+
+        page += 1
+        time.sleep(0.5)
+
+    print(f"    => {saved} valid images saved to {save_dir}")
+    return saved
+
+
+def main():
+    print("=" * 55)
+    print("  iNaturalist Tree Lifecycle Dataset Downloader")
+    print("=" * 55)
+    total = 0
+    for species_name, taxon in SPECIES.items():
+        print(f"\n[Species] {species_name.upper()} ({taxon})")
+        for stage, months in LIFECYCLE_MONTHS.items():
+            save_dir = os.path.join('data', species_name, stage)
+            n = download_class(species_name, taxon, stage, months, save_dir, IMAGES_PER_CLASS)
+            total += n
+
+    print("\n" + "=" * 55)
+    print(f"  Download Complete! Total valid images: {total}")
+    print(f"  Expected structure: data/{{species}}/{{stage}}/")
+    print("=" * 55)
+
+    print("\nDataset Summary:")
+    for species_name in SPECIES:
+        species_dir = os.path.join('data', species_name)
+        if os.path.isdir(species_dir):
+            for stage in LIFECYCLE_MONTHS:
+                stage_dir = os.path.join(species_dir, stage)
+                count = len([f for f in os.listdir(stage_dir) if f.endswith(('.jpg','.png'))]) if os.path.isdir(stage_dir) else 0
+                print(f"  {species_name:8s} / {stage:22s}: {count:4d} images")
+
+
+if __name__ == '__main__':
+    main()
