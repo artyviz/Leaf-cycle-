@@ -109,7 +109,7 @@ def main():
         if os.path.isdir(species_dir):
             for stage in LIFECYCLE_MONTHS:
                 stage_dir = os.path.join(species_dir, stage)
-                count = len([f for f in os.listdir(stage_dir) if f.endswith(('.jpg','.png'))]) if os.path.isdir(stage_dir) else 0
+                count = len([f for f in os.listdir(stage_dir) if f.endswith(('.jpg', '.png'))]) if os.path.isdir(stage_dir) else 0
                 print(f"  {species_name:8s} / {stage:22s}: {count:4d} images")
 
 

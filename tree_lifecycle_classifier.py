@@ -17,7 +17,7 @@ IMG_WIDTH = 224
 BATCH_SIZE = 32
 EPOCHS = 20
 
-DATA_DIR = 'data' 
+DATA_DIR = 'data'
 
 LIFECYCLE_STAGES = ['bud_emergence', 'expansion_maturity', 'senescence', 'abscission']
 
@@ -42,7 +42,7 @@ def collect_tree_data(root_dir=DATA_DIR):
                             image_paths.append(os.path.join(stage_dir, img_file))
                             species_labels.append(species)
                             lifecycle_labels.append(stage)
-    
+
     df = pd.DataFrame({
         'path': image_paths,
         'species': species_labels,
@@ -117,9 +117,9 @@ def process_path(file_path, species_label, lifecycle_label):
 
 def augment(img, targets):
     img = tf.image.random_flip_left_right(img)
-    img = tf.image.random_brightness(img, max_delta=0.2) 
+    img = tf.image.random_brightness(img, max_delta=0.2)
     img = tf.image.random_contrast(img, lower=0.8, upper=1.2)
-    img = tf.image.random_saturation(img, lower=0.8, upper=1.2) 
+    img = tf.image.random_saturation(img, lower=0.8, upper=1.2)
     img = tf.clip_by_value(img, 0.0, 1.0)
     return img, targets
 
@@ -127,16 +127,16 @@ def make_dataset(df, shuffle=False, perform_augmentation=False):
     paths = df['path'].values
     species_labels = df['species'].map(species_to_idx).values
     lifecycle_labels = df['lifecycle'].map(lifecycle_to_idx).values
-    
+
     dataset = tf.data.Dataset.from_tensor_slices((paths, species_labels, lifecycle_labels))
-    
+
     if shuffle:
         dataset = dataset.shuffle(buffer_size=len(df))
-        
+
     dataset = dataset.map(process_path, num_parallel_calls=tf.data.AUTOTUNE)
     if perform_augmentation:
         dataset = dataset.map(augment, num_parallel_calls=tf.data.AUTOTUNE)
-        
+
     dataset = dataset.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
     return dataset
 
@@ -176,7 +176,7 @@ callbacks = [
     ModelCheckpoint(
         filepath=checkpoint_filepath,
         save_weights_only=True,
-        monitor='val_loss', 
+        monitor='val_loss',
         mode='min',
         save_best_only=True,
         verbose=1
@@ -188,10 +188,10 @@ callbacks = [
         verbose=1
     ),
     ReduceLROnPlateau(
-        monitor='val_loss', 
-        factor=0.5, 
-        patience=3, 
-        verbose=1, 
+        monitor='val_loss',
+        factor=0.5,
+        patience=3,
+        verbose=1,
         min_lr=1e-6
     )
 ]
@@ -292,17 +292,17 @@ def predict_tree_leaf(img_path):
         img = tf.keras.preprocessing.image.load_img(img_path, target_size=(IMG_HEIGHT, IMG_WIDTH))
         img_array = tf.keras.preprocessing.image.img_to_array(img) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
-        
+
         preds = model.predict(img_array)
         species_pred = preds[0][0]
         lifecycle_pred = preds[1][0]
-        
+
         species_label = idx_to_species[np.argmax(species_pred)]
         lifecycle_label = idx_to_lifecycle[np.argmax(lifecycle_pred)]
-        
+
         species_conf = np.max(species_pred) * 100
         lifecycle_conf = np.max(lifecycle_pred) * 100
-        
+
         return {
             'species': species_label,
             'species_confidence': species_conf,
@@ -368,4 +368,4 @@ print(classification_report(all_species_true, all_species_pred, target_names=spe
 print("Classification Report — Lifecycle:")
 print(classification_report(all_lifecycle_true, all_lifecycle_pred, target_names=lifecycle_names))
 
-print("\nRefactoring Complete! You can now use predict_tree_leaf() function to infer images.")
+print("\nTraining Complete.")
