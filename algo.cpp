@@ -255,11 +255,12 @@ int main() {
         for (int j = i+1; j < (int)leaves.size(); ++j) {
             double dz = leaves[i].centroid.z - leaves[j].centroid.z;
             bool   occ = is_occluded_by(leaves[j], leaves[i]);
+            std::string occ_str = occ
+                ? "[L" + std::to_string(leaves[i].id) +
+                  " OCCLUDES L" + std::to_string(leaves[j].id) + "]"
+                : "";
             std::printf("  L%d -> L%d :  dz = %+.3f   %s\n",
-                        leaves[i].id, leaves[j].id, dz,
-                        occ ? "[L" + std::to_string(leaves[i].id) +
-                              " OCCLUDES L" + std::to_string(leaves[j].id) + "]"
-                            : "");
+                        leaves[i].id, leaves[j].id, dz, occ_str.c_str());
         }
     }
 
