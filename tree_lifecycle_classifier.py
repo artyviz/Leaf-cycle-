@@ -8,6 +8,7 @@ from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.regularizers import l2
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
@@ -146,11 +147,11 @@ test_ds = make_dataset(test_df, shuffle=False, perform_augmentation=False)
 print("\nBuilding Multi-Head MobileNetV2 Architecture...")
 
 base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(IMG_HEIGHT, IMG_WIDTH, 3))
-base_model.trainable = False 
+base_model.trainable = False
 
 x = GlobalAveragePooling2D()(base_model.output)
-x = Dense(512, activation='relu')(x)
-x = Dropout(0.5)(x)
+x = Dense(512, activation='relu', kernel_regularizer=l2(1e-4))(x)
+x = Dropout(0.6)(x)
 
 species_head = Dense(num_species_classes, activation='softmax', name='species')(x)
 lifecycle_head = Dense(num_lifecycle_classes, activation='softmax', name='lifecycle')(x)
@@ -160,17 +161,11 @@ model = Model(inputs=base_model.input, outputs=[species_head, lifecycle_head])
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
     loss={
-        'species': 'categorical_crossentropy', 
-        'lifecycle': 'categorical_crossentropy'
+        'species':   tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+        'lifecycle': tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
     },
-    loss_weights={
-        'species': 1.0,
-        'lifecycle': 1.0
-    }, 
-    metrics={
-        'species': 'accuracy', 
-        'lifecycle': 'accuracy'
-    }
+    loss_weights={'species': 1.0, 'lifecycle': 1.0},
+    metrics={'species': 'accuracy', 'lifecycle': 'accuracy'}
 )
 
 model.summary()
@@ -210,15 +205,76 @@ history = model.fit(
     verbose=1
 )
 
-print("\nEvaluating on Test Set...")
+print("\nEvaluating on Test Set (Phase 1)...")
 model.load_weights(checkpoint_filepath)
 test_results = model.evaluate(test_ds, verbose=1)
 
-print("\n--- Test Results ---")
-print(f"Total Loss: {test_results[0]:.4f}")
-print(f"Species Loss: {test_results[1]:.4f}")
-print(f"Lifecycle Loss: {test_results[2]:.4f}")
-print(f"Species Accuracy: {test_results[3]:.4f}")
+print("\n--- Phase 1 Test Results ---")
+print(f"Total Loss:         {test_results[0]:.4f}")
+print(f"Species Loss:       {test_results[1]:.4f}")
+print(f"Lifecycle Loss:     {test_results[2]:.4f}")
+print(f"Species Accuracy:   {test_results[3]:.4f}")
+print(f"Lifecycle Accuracy: {test_results[4]:.4f}")
+
+print("\n--- Phase 2: Fine-Tuning Top MobileNetV2 Layers ---")
+base_model.trainable = True
+for layer in base_model.layers[:-30]:
+    layer.trainable = False
+
+finetune_checkpoint = 'best_tree_lifecycle_finetuned.weights.h5'
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+    loss={
+        'species':   tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+        'lifecycle': tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
+    },
+    loss_weights={'species': 1.0, 'lifecycle': 1.0},
+    metrics={'species': 'accuracy', 'lifecycle': 'accuracy'}
+)
+
+finetune_callbacks = [
+    ModelCheckpoint(
+        filepath=finetune_checkpoint,
+        save_weights_only=True,
+        monitor='val_loss',
+        mode='min',
+        save_best_only=True,
+        verbose=1
+    ),
+    EarlyStopping(
+        monitor='val_loss',
+        patience=5,
+        restore_best_weights=True,
+        verbose=1
+    ),
+    ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=3,
+        verbose=1,
+        min_lr=1e-7
+    )
+]
+
+print("Starting Fine-Tuning...")
+model.fit(
+    train_ds,
+    epochs=15,
+    validation_data=val_ds,
+    callbacks=finetune_callbacks,
+    verbose=1
+)
+
+print("\nEvaluating on Test Set (Phase 2 - Fine-Tuned)...")
+model.load_weights(finetune_checkpoint)
+test_results = model.evaluate(test_ds, verbose=1)
+
+print("\n--- Final Test Results (Fine-Tuned) ---")
+print(f"Total Loss:         {test_results[0]:.4f}")
+print(f"Species Loss:       {test_results[1]:.4f}")
+print(f"Lifecycle Loss:     {test_results[2]:.4f}")
+print(f"Species Accuracy:   {test_results[3]:.4f}")
 print(f"Lifecycle Accuracy: {test_results[4]:.4f}")
 
 idx_to_species = {v: k for k, v in species_to_idx.items()}
