@@ -17,7 +17,7 @@ LIFECYCLE_MONTHS = {
     'abscission':          '11,12',
 }
 
-IMAGES_PER_CLASS = 120
+IMAGES_PER_CLASS = 200
 INAT_API = 'https://api.inaturalist.org/v1/observations'
 
 

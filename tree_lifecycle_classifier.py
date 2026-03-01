@@ -217,14 +217,21 @@ print(f"Species Accuracy:   {test_results[3]:.4f}")
 print(f"Lifecycle Accuracy: {test_results[4]:.4f}")
 
 print("\n--- Phase 2: Fine-Tuning Top MobileNetV2 Layers ---")
+model.load_weights(checkpoint_filepath)
+
 base_model.trainable = True
 for layer in base_model.layers[:-30]:
     layer.trainable = False
+for layer in base_model.layers:
+    if isinstance(layer, tf.keras.layers.BatchNormalization):
+        layer.trainable = False
+
+print(f"Trainable layers in fine-tune phase: {sum(1 for l in model.layers if l.trainable)}")
 
 finetune_checkpoint = 'best_tree_lifecycle_finetuned.weights.h5'
 
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+    optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5),
     loss={
         'species':   tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
         'lifecycle': tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
@@ -244,7 +251,7 @@ finetune_callbacks = [
     ),
     EarlyStopping(
         monitor='val_loss',
-        patience=5,
+        patience=6,
         restore_best_weights=True,
         verbose=1
     ),
@@ -260,7 +267,7 @@ finetune_callbacks = [
 print("Starting Fine-Tuning...")
 model.fit(
     train_ds,
-    epochs=15,
+    epochs=20,
     validation_data=val_ds,
     callbacks=finetune_callbacks,
     verbose=1
